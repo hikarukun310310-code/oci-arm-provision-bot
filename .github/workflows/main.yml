@@ -8,27 +8,50 @@ jobs:
   run-orm:
     runs-on: ubuntu-latest
     steps:
-      - name: Install OCI CLI
+      - name: Run OCI Stack Job via Python
+        shell: python
+        env:
+          OCI_CONFIG: ${{ secrets.OCI_CONFIG }}
+          OCI_KEY_FILE: ${{ secrets.OCI_KEY_FILE }}
+          OCI_STACK_ID: ${{ secrets.OCI_STACK_ID }}
         run: |
-          bash -c "$(curl -L https://githubusercontent.com)" -- --accept-all-defaults
-          echo "/home/runner/bin" >> $GITHUB_PATH
+          import os, base64, re
+          try:
+              import oci
+          except ImportError:
+              os.system("pip install oci --quiet")
+              import oci
 
-      - name: Configure OCI CLI
-        run: |
-          mkdir -p ~/.oci
-          echo "${{ secrets.OCI_CONFIG }}" > ~/.oci/config
-          echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
+          # configと鍵ファイルの復元
+          os.makedirs(os.path.expanduser("~/.oci"), exist_ok=True)
+          config_text = os.environ["OCI_CONFIG"]
+          key_text = os.environ["OCI_KEY_FILE"]
           
-          # config内の鍵パスを強制的に書き換え
-          sed -i 's|key_file=.*|key_file=~/.oci/oci_api_key.pem|g' ~/.oci/config
-          if ! grep -q "key_file" ~/.oci/config; then
-            echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
-          fi
+          key_path = os.path.expanduser("~/.oci/oci_api_key.pem")
+          with open(key_path, "w") as f:
+              f.write(key_text.strip() + "\n")
+              
+          config_text = re.sub(r"key_file\s*=.*", f"key_file={key_path}", config_text)
+          if "key_file" not in config_text:
+              config_text += f"\nkey_file={key_path}"
+              
+          config_path = os.path.expanduser("~/.oci/config")
+          with open(config_path, "w") as f:
+              f.write(config_text.strip() + "\n")
 
-      - name: Run OCI Stack Job
-        run: |
-          export PATH="/home/runner/bin:$PATH"
-          oci resource-manager job create-apply-job \
-            --stack-id "${{ secrets.OCI_STACK_ID }}" \
-            --execution-plan-strategy "FROM_STACK_COMPARE_IMAGE_IDS"
+          # OCIのスタック実行ジョブを投入
+          config = oci.config.from_file()
+          rm_client = oci.resource_manager.ResourceManagerClient(config)
+          
+          print("Connecting to OCI and applying your stack...")
+          job_details = oci.resource_manager.models.CreateApplyJobDetails(
+              execution_plan_strategy="FROM_STACK_COMPARE_IMAGE_IDS"
+          )
+          request_details = oci.resource_manager.models.CreateJobDetails(
+              stack_id=os.environ["OCI_STACK_ID"],
+              job_operation_details=job_details,
+              display_name="Auto_Create_Minecraft_Server"
+          )
+          
+          response = rm_client.create_job(request_details)
+          print(f"Job successfully created! Job ID: {response.data.id}")
