@@ -8,19 +8,22 @@ jobs:
   run-orm:
     runs-on: ubuntu-latest
     steps:
-      - name: Run OCI Stack Job via Python
-        shell: python
+      - name: Install OCI SDK and Run Python Script
         env:
           OCI_CONFIG: ${{ secrets.OCI_CONFIG }}
           OCI_KEY_FILE: ${{ secrets.OCI_KEY_FILE }}
           OCI_STACK_ID: ${{ secrets.OCI_STACK_ID }}
         run: |
-          import os, base64, re
-          try:
-              import oci
-          except ImportError:
-              os.system("pip install oci --quiet")
-              import oci
+          # 権限問題を回避するためにユーザー環境に直接インストール
+          pip install oci --user --quiet
+          
+          # Pythonスクリプトをその場で作成して実行
+          python3 -c '
+          import os, re, sys
+          # インストールしたパスをPythonに認識させる
+          import site
+          sys.path.append(site.getusersitepackages())
+          import oci
 
           # configと鍵ファイルの復元
           os.makedirs(os.path.expanduser("~/.oci"), exist_ok=True)
@@ -55,3 +58,4 @@ jobs:
           
           response = rm_client.create_job(request_details)
           print(f"Job successfully created! Job ID: {response.data.id}")
+          '
