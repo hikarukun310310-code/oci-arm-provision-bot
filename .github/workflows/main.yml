@@ -1,0 +1,25 @@
+name: OCI Ampere Auto Create
+on:
+  schedule:
+    - cron: '*/5 * * * *' # 5分おきに自動実行
+  workflow_dispatch: # 手動実行ボタンも有効化
+
+jobs:
+  run-orm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup OCI CLI
+        uses: oracle-actions/setup-oci-cli@v1.3.1
+        with:
+          user: ${{ secrets.OCI_USER_ID }}
+          tenancy: ${{ secrets.OCI_TENANCY_ID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          region: ap-tokyo-1
+          private_key: ${{ secrets.OCI_KEY_FILE }}
+
+      - name: Run OCI Stack Job
+        run: |
+          oci resource-manager job create-apply-job \
+            --stack-id "${{ secrets.OCI_STACK_ID }}" \
+            --execution-plan-strategy "FROM_STACK_COMPARE_IMAGE_IDS" \
+            --wait-for-state "SUCCEEDED"
