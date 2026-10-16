@@ -1,25 +1,34 @@
 name: OCI Ampere Auto Create
 on:
   schedule:
-    - cron: '*/5 * * * *' # 5分おきに自動実行
-  workflow_dispatch: # 手動実行ボタンも有効化
+    - cron: '*/5 * * * *' # 5分おきに全自動実行
+  workflow_dispatch: # 手動実行ボタン
 
 jobs:
   run-orm:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup OCI CLI
-        uses: oracle-actions/setup-oci-cli@v1.3.1
-        with:
-          user: ${{ secrets.OCI_USER_ID }}
-          tenancy: ${{ secrets.OCI_TENANCY_ID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          region: ap-tokyo-1
-          private_key: ${{ secrets.OCI_KEY_FILE }}
+      - name: Install OCI CLI
+        run: |
+          bash -c "$(curl -L https://githubusercontent.com)" -- --accept-all-defaults
+          echo "/home/runner/bin" >> $GITHUB_PATH
+
+      - name: Configure OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_CONFIG }}" > ~/.oci/config
+          echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
+          
+          # config内の鍵パスを強制的に書き換え
+          sed -i 's|key_file=.*|key_file=~/.oci/oci_api_key.pem|g' ~/.oci/config
+          if ! grep -q "key_file" ~/.oci/config; then
+            echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
+          fi
 
       - name: Run OCI Stack Job
         run: |
+          export PATH="/home/runner/bin:$PATH"
           oci resource-manager job create-apply-job \
             --stack-id "${{ secrets.OCI_STACK_ID }}" \
-            --execution-plan-strategy "FROM_STACK_COMPARE_IMAGE_IDS" \
-            --wait-for-state "SUCCEEDED"
+            --execution-plan-strategy "FROM_STACK_COMPARE_IMAGE_IDS"
